@@ -44,11 +44,6 @@ jobs:
         with:
           name: Caybul-macos-universal
           path: Caybul-macos-universal.zip
-      - name: Attach to release
-        if: startsWith(github.ref, 'refs/tags/')
-        uses: softprops/action-gh-release@v2
-        with:
-          files: Caybul-macos-universal.zip
 
   windows:
     runs-on: windows-latest
@@ -70,11 +65,6 @@ jobs:
         with:
           name: Caybul-windows-x64
           path: Caybul-windows-x64.zip
-      - name: Attach to release
-        if: startsWith(github.ref, 'refs/tags/')
-        uses: softprops/action-gh-release@v2
-        with:
-          files: Caybul-windows-x64.zip
 
   linux:
     runs-on: ubuntu-latest
@@ -102,8 +92,23 @@ jobs:
         with:
           name: caybul-linux-x64
           path: caybul-linux-x64.tar.gz
-      - name: Attach to release
-        if: startsWith(github.ref, 'refs/tags/')
+
+  # On a v* tag, gather the three platform builds into one GitHub Release.
+  release:
+    if: startsWith(github.ref, 'refs/tags/')
+    needs: [macos, windows, linux]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+      - name: Publish release
         uses: softprops/action-gh-release@v2
         with:
-          files: caybul-linux-x64.tar.gz
+          files: |
+            artifacts/**/*.zip
+            artifacts/**/*.tar.gz
+          generate_release_notes: true
+          fail_on_unmatched_files: true
