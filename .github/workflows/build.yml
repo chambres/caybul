@@ -1,0 +1,109 @@
+name: build
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  pull_request:
+  workflow_dispatch:
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  macos:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-darwin,x86_64-apple-darwin
+      - uses: Swatinem/rust-cache@v2
+      - name: Build (both arches)
+        run: |
+          cargo build --release --target aarch64-apple-darwin
+          cargo build --release --target x86_64-apple-darwin
+      - name: Assemble universal app + CLI
+        run: |
+          set -euo pipefail
+          mkdir -p out/Caybul/Caybul.app/Contents/MacOS
+          cp packaging/macos/Info.plist out/Caybul/Caybul.app/Contents/Info.plist
+          lipo -create \
+            target/aarch64-apple-darwin/release/caybul-gui \
+            target/x86_64-apple-darwin/release/caybul-gui \
+            -output out/Caybul/Caybul.app/Contents/MacOS/caybul-gui
+          lipo -create \
+            target/aarch64-apple-darwin/release/caybul \
+            target/x86_64-apple-darwin/release/caybul \
+            -output out/Caybul/caybul
+          codesign --force --deep -s - out/Caybul/Caybul.app || true
+          codesign --force -s - out/Caybul/caybul || true
+          cp packaging/README-macos.txt out/Caybul/README.txt
+          ditto -c -k --keepParent out/Caybul Caybul-macos-universal.zip
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Caybul-macos-universal
+          path: Caybul-macos-universal.zip
+      - name: Attach to release
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: Caybul-macos-universal.zip
+
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Build
+        run: cargo build --release
+      - name: Package
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path out\Caybul-Windows | Out-Null
+          Copy-Item target\release\caybul-gui.exe out\Caybul-Windows\
+          Copy-Item target\release\caybul.exe     out\Caybul-Windows\
+          Copy-Item packaging\README-windows.txt  out\Caybul-Windows\README.txt
+          Compress-Archive -Path out\Caybul-Windows\* -DestinationPath Caybul-windows-x64.zip -Force
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Caybul-windows-x64
+          path: Caybul-windows-x64.zip
+      - name: Attach to release
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: Caybul-windows-x64.zip
+
+  linux:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: System libraries (GUI toolkit + file dialog)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libgtk-3-dev libxcb-render0-dev libxcb-shape0-dev \
+            libxcb-xfixes0-dev libxkbcommon-dev
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Build
+        run: cargo build --release
+      - name: Package
+        run: |
+          set -euo pipefail
+          mkdir -p out/caybul-linux-x64
+          cp target/release/caybul-gui out/caybul-linux-x64/
+          cp target/release/caybul     out/caybul-linux-x64/
+          cp packaging/README-linux.txt out/caybul-linux-x64/README.txt
+          tar -C out -czf caybul-linux-x64.tar.gz caybul-linux-x64
+      - uses: actions/upload-artifact@v4
+        with:
+          name: caybul-linux-x64
+          path: caybul-linux-x64.tar.gz
+      - name: Attach to release
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: caybul-linux-x64.tar.gz

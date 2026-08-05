@@ -1,0 +1,17 @@
+[package]
+name = "caybul-core"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Caybul core: cable link detection, peer discovery, and the transfer engine"
+
+[dependencies]
+anyhow = "1"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+blake3 = "1"
+if-addrs = "0.13"
+socket2 = { version = "0.5", features = ["all"] }
+
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"

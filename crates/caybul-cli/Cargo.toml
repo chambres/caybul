@@ -1,0 +1,16 @@
+[package]
+name = "caybul"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Caybul: transfer anything between two devices over a cable"
+
+[[bin]]
+name = "caybul"
+path = "src/main.rs"
+
+[dependencies]
+caybul-core = { path = "../caybul-core" }
+anyhow = "1"
+clap = { version = "4", features = ["derive"] }
+indicatif = "0.17"
