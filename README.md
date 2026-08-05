@@ -21,16 +21,6 @@ Which cables carry a link between which systems. Hover an icon for detail.
 With no cable, Caybul falls back to Wi-Fi or the local network and asks for a
 confirmation code first.
 
-Why plain USB-C is nearly all blank: USB needs one side to be the host and the
-other the device, and a PC's USB port can only ever be the host. Two Macs get
-around it because a Mac can play the device end; a PC can't, so any pairing with
-a PC on plain USB-C simply doesn't come up. Two things that follow from this:
-
-- A cable rated "5 Gbps" or "10 Gbps" only reaches that between a computer and a
-  device. Two computers is a different case and the rating doesn't carry over.
-- USB-C is a connector, not a protocol. A Thunderbolt cable and a charge-only
-  cable can look identical. Thunderbolt cables have a lightning bolt on them.
-
 Caybul reads the link type and reports the speed it measured, so you can tell
 which case you're in.
 
