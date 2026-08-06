@@ -949,8 +949,7 @@ impl App {
                             human_bytes(d),
                             human_bytes(t),
                             rate
-                        ))
-                        .animate(true),
+                        )),
                 );
             }
             SendState::Finished { ok, lines } => {
@@ -1010,8 +1009,7 @@ impl App {
                         human_bytes(done),
                         human_bytes(total),
                         rate
-                    ))
-                    .animate(true),
+                    )),
             );
         }
         egui::Frame::group(ui.style()).show(ui, |ui| {
@@ -1079,8 +1077,7 @@ impl eframe::App for App {
                         ui.label("Receiving files…");
                         ui.add(
                             egui::ProgressBar::new(frac)
-                                .text(format!("{} / {}", human_bytes(done), human_bytes(total)))
-                                .animate(true),
+                                .text(format!("{} / {}", human_bytes(done), human_bytes(total))),
                         );
                     } else if let Some(msg) = self.last_received.clone() {
                         ui.horizontal(|ui| {
