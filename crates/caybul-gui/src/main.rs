@@ -28,8 +28,8 @@ use std::time::{Duration, Instant};
 fn main() -> eframe::Result<()> {
     let options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default()
-            .with_inner_size([760.0, 640.0])
-            .with_min_inner_size([600.0, 500.0])
+            .with_inner_size([760.0, 700.0])
+            .with_min_inner_size([640.0, 620.0])
             .with_title("Caybul"),
         ..Default::default()
     };
@@ -954,9 +954,15 @@ impl App {
                 );
             }
             SendState::Finished { ok, lines } => {
-                for line in lines {
-                    ui.label(line);
-                }
+                egui::ScrollArea::vertical()
+                    .id_salt("send_result")
+                    .max_height(80.0)
+                    .auto_shrink([false, true])
+                    .show(ui, |ui| {
+                        for line in lines {
+                            ui.label(line);
+                        }
+                    });
                 if !*ok {
                     ui.colored_label(
                         egui::Color32::from_rgb(230, 130, 100),
@@ -1014,7 +1020,7 @@ impl App {
             egui::ScrollArea::vertical()
                 .id_salt("log")
                 .stick_to_bottom(true)
-                .max_height(180.0)
+                .max_height(140.0)
                 .auto_shrink([false, false])
                 .show(ui, |ui| {
                     if self.recv_log.is_empty() {
@@ -1095,16 +1101,12 @@ impl eframe::App for App {
         egui::CentralPanel::default()
             .frame(egui::Frame::central_panel(&ctx.style()).inner_margin(14.0))
             .show(ctx, |ui| {
-                egui::ScrollArea::vertical()
-                    .auto_shrink([false, false])
-                    .show(ui, |ui| {
-                        self.incoming_pair_panel(ui);
-                        if self.paired.is_none() {
-                            self.pairing_screen(ui);
-                        } else {
-                            self.transfer_screen(ui);
-                        }
-                    });
+                self.incoming_pair_panel(ui);
+                if self.paired.is_none() {
+                    self.pairing_screen(ui);
+                } else {
+                    self.transfer_screen(ui);
+                }
             });
 
         ctx.request_repaint_after(Duration::from_millis(200));
@@ -1205,12 +1207,13 @@ fn dir_size(path: &PathBuf) -> Option<u64> {
     Some(total)
 }
 
-/// "/Users/rahul/Downloads/x" -> "~/Downloads/x"
+/// "/Users/rahul/Downloads/x" -> "~/Downloads/x" (native separator, so
+/// Windows shows "~\Downloads\..." instead of a mixed-slash path).
 fn tilde(p: &std::path::Path) -> String {
     #[allow(deprecated)]
     if let Some(home) = std::env::home_dir() {
         if let Ok(rest) = p.strip_prefix(&home) {
-            return format!("~/{}", rest.display());
+            return format!("~{}{}", std::path::MAIN_SEPARATOR, rest.display());
         }
     }
     p.display().to_string()
