@@ -175,7 +175,7 @@ fn cmd_receive(dir: PathBuf, name: Option<String>, port: u16) -> anyhow::Result<
     let r = receiver::Receiver {
         name: name.clone(),
         port,
-        dest: dir,
+        dest: Arc::new(Mutex::new(dir)),
         accepted: Arc::new(Mutex::new(HashSet::new())),
         pair_handler: Arc::new(|peer: &str, code: &str| {
             println!("\nPair request from \"{peer}\" — code: {code}");

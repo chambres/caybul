@@ -7,6 +7,7 @@
 //!   connection is USB4.
 //! - Multi-stream chunked TCP transfer with blake3 verification and resume.
 
+pub mod config;
 pub mod discovery;
 pub mod link;
 pub mod pair;

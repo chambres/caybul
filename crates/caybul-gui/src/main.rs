@@ -7,8 +7,10 @@
 
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+use caybul_core::config;
 use caybul_core::discovery::{self, Peer};
 use caybul_core::link::{self, Link, LinkKind};
+use caybul_core::util::open_folder;
 use caybul_core::pair::{self, PairResult};
 use caybul_core::protocol::DEFAULT_PORT;
 use caybul_core::transfer::{receiver, sender};
@@ -111,7 +113,9 @@ struct App {
     recv_log: Vec<String>,
     recv_progress: Option<(u64, u64)>,
     recv_started_at: Option<Instant>,
-    dest_dir: PathBuf,
+    recv_session_files: u32,
+    last_received: Option<String>,
+    dest_dir: Arc<Mutex<PathBuf>>,
     // Pairing
     paired: Option<PairedPeer>,
     incoming: Option<IncomingPair>,
@@ -144,7 +148,11 @@ impl App {
             thread::sleep(Duration::from_secs(3));
         });
 
-        let dest_dir = dirs_download().join("caybul-inbox");
+        let dest_dir = Arc::new(Mutex::new(
+            config::load()
+                .dest_dir
+                .unwrap_or_else(|| dirs_download().join("caybul-inbox")),
+        ));
         let accepted: Arc<Mutex<HashSet<String>>> = Arc::new(Mutex::new(HashSet::new()));
 
         // Start the always-on receiver: it answers pair requests and accepts
@@ -157,7 +165,7 @@ impl App {
             let r = receiver::Receiver {
                 name: my_name.clone(),
                 port: DEFAULT_PORT,
-                dest: dest_dir.clone(),
+                dest: Arc::clone(&dest_dir),
                 accepted: Arc::clone(&accepted),
                 pair_handler: Arc::new(move |peer: &str, code: &str| {
                     let (reply_tx, reply_rx) = channel();
@@ -196,6 +204,8 @@ impl App {
             recv_log: Vec::new(),
             recv_progress: None,
             recv_started_at: None,
+            recv_session_files: 0,
+            last_received: None,
             dest_dir,
             paired: None,
             incoming: None,
@@ -444,6 +454,7 @@ impl App {
                 } => {
                     self.recv_progress = Some((resumed_bytes, total_bytes));
                     self.recv_started_at = Some(Instant::now());
+                    self.recv_session_files = 0;
                     self.push_log(format!(
                         "Receiving {files} file{} ({}) from {}…",
                         if files == 1 { "" } else { "s" },
@@ -458,6 +469,7 @@ impl App {
                     self.recv_progress = Some((done_bytes, total_bytes));
                 }
                 receiver::Event::FileCompleted { rel_path, bytes } => {
+                    self.recv_session_files += 1;
                     self.push_log(format!("Received {rel_path} ({})", human_bytes(bytes)));
                 }
                 receiver::Event::SessionEnded { ok, .. } => {
@@ -466,6 +478,13 @@ impl App {
                     } else {
                         "Transfer interrupted — it will pick up where it left off.".to_string()
                     });
+                    if ok && self.recv_session_files > 0 {
+                        let n = self.recv_session_files;
+                        self.last_received = Some(format!(
+                            "Received {n} file{}",
+                            if n == 1 { "" } else { "s" }
+                        ));
+                    }
                     self.recv_progress = None;
                     self.recv_started_at = None;
                 }
@@ -601,6 +620,27 @@ impl App {
     }
 
     // ---------------- UI ----------------
+
+    /// "Received files go to <path>  [Change…] [Show]" — used on both screens.
+    fn dest_row(&mut self, ui: &mut egui::Ui) {
+        let current = self.dest_dir.lock().unwrap().clone();
+        ui.horizontal(|ui| {
+            ui.weak("Received files go to");
+            ui.label(tilde(&current));
+            if ui.button("Change…").clicked() {
+                if let Some(dir) = rfd::FileDialog::new().set_directory(&current).pick_folder() {
+                    *self.dest_dir.lock().unwrap() = dir.clone();
+                    config::save(&config::Config {
+                        dest_dir: Some(dir),
+                    });
+                }
+            }
+            if ui.button("Show").clicked() {
+                let _ = std::fs::create_dir_all(&current);
+                open_folder(&current);
+            }
+        });
+    }
 
     fn link_banner(&self, ui: &mut egui::Ui) {
         let has_tb = self
@@ -781,6 +821,9 @@ impl App {
                 ui.weak(format!("This computer: “{}”", self.my_name));
             });
 
+        ui.add_space(6.0);
+        self.dest_row(ui);
+
         if let Some((addr, label)) = to_pair {
             self.start_pair(addr, label);
         }
@@ -943,10 +986,7 @@ impl App {
 
         // ---- Receive ----
         ui.strong("Receive");
-        ui.horizontal(|ui| {
-            ui.weak("Files you receive go to");
-            ui.label("Downloads → caybul-inbox");
-        });
+        self.dest_row(ui);
         if let Some((done, total)) = self.recv_progress {
             let frac = if total > 0 {
                 done as f32 / total as f32
@@ -974,6 +1014,7 @@ impl App {
             egui::ScrollArea::vertical()
                 .id_salt("log")
                 .stick_to_bottom(true)
+                .max_height(180.0)
                 .auto_shrink([false, false])
                 .show(ui, |ui| {
                     if self.recv_log.is_empty() {
@@ -1015,15 +1056,55 @@ impl eframe::App for App {
                 });
             });
 
+        // Incoming-transfer banner, visible no matter which screen is up —
+        // a receive must never happen invisibly.
+        let show_banner =
+            self.paired.is_none() && (self.recv_progress.is_some() || self.last_received.is_some());
+        if show_banner {
+            egui::TopBottomPanel::bottom("activity")
+                .frame(egui::Frame::side_top_panel(&ctx.style()).inner_margin(10.0))
+                .show(ctx, |ui| {
+                    if let Some((done, total)) = self.recv_progress {
+                        let frac = if total > 0 {
+                            done as f32 / total as f32
+                        } else {
+                            0.0
+                        };
+                        ui.label("Receiving files…");
+                        ui.add(
+                            egui::ProgressBar::new(frac)
+                                .text(format!("{} / {}", human_bytes(done), human_bytes(total)))
+                                .animate(true),
+                        );
+                    } else if let Some(msg) = self.last_received.clone() {
+                        ui.horizontal(|ui| {
+                            status_dot(ui, egui::Color32::from_rgb(120, 220, 120));
+                            ui.label(msg);
+                            if ui.button("Show").clicked() {
+                                let dest = self.dest_dir.lock().unwrap().clone();
+                                open_folder(&dest);
+                            }
+                            if ui.small_button("x").clicked() {
+                                self.last_received = None;
+                            }
+                        });
+                    }
+                });
+        }
+
         egui::CentralPanel::default()
             .frame(egui::Frame::central_panel(&ctx.style()).inner_margin(14.0))
             .show(ctx, |ui| {
-                self.incoming_pair_panel(ui);
-                if self.paired.is_none() {
-                    self.pairing_screen(ui);
-                } else {
-                    self.transfer_screen(ui);
-                }
+                egui::ScrollArea::vertical()
+                    .auto_shrink([false, false])
+                    .show(ui, |ui| {
+                        self.incoming_pair_panel(ui);
+                        if self.paired.is_none() {
+                            self.pairing_screen(ui);
+                        } else {
+                            self.transfer_screen(ui);
+                        }
+                    });
             });
 
         ctx.request_repaint_after(Duration::from_millis(200));
@@ -1122,6 +1203,17 @@ fn dir_size(path: &PathBuf) -> Option<u64> {
         }
     }
     Some(total)
+}
+
+/// "/Users/rahul/Downloads/x" -> "~/Downloads/x"
+fn tilde(p: &std::path::Path) -> String {
+    #[allow(deprecated)]
+    if let Some(home) = std::env::home_dir() {
+        if let Ok(rest) = p.strip_prefix(&home) {
+            return format!("~/{}", rest.display());
+        }
+    }
+    p.display().to_string()
 }
 
 fn dirs_download() -> PathBuf {

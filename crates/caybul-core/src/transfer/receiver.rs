@@ -94,7 +94,7 @@ struct Session {
 /// Everything a connection handler needs, shared across threads.
 struct Ctx {
     active: Mutex<Option<Arc<Session>>>,
-    dest: PathBuf,
+    dest: Arc<Mutex<PathBuf>>,
     name: String,
     accepted: Arc<Mutex<HashSet<String>>>,
     pair_handler: Arc<dyn Fn(&str, &str) -> bool + Send + Sync>,
@@ -104,7 +104,9 @@ struct Ctx {
 pub struct Receiver {
     pub name: String,
     pub port: u16,
-    pub dest: PathBuf,
+    /// Destination folder for received files. Shared so the app can change
+    /// it at runtime; each incoming session reads it when it starts.
+    pub dest: Arc<Mutex<PathBuf>>,
     /// Valid send tokens. Shared so the app can also register tokens issued
     /// to it by peers it paired with (the symmetric direction).
     pub accepted: Arc<Mutex<HashSet<String>>>,
@@ -141,7 +143,7 @@ impl Receiver {
 
         let ctx = Arc::new(Ctx {
             active: Mutex::new(None),
-            dest: self.dest.clone(),
+            dest: Arc::clone(&self.dest),
             name: self.name.clone(),
             accepted: Arc::clone(&self.accepted),
             pair_handler: Arc::clone(&self.pair_handler),
@@ -325,7 +327,8 @@ fn handle_conn(stream: TcpStream, ctx: Arc<Ctx>) -> anyhow::Result<()> {
                 }
             }
 
-            let session = match build_session(&ctx.dest, chunk_size, &files) {
+            let dest_now = ctx.dest.lock().unwrap().clone();
+            let session = match build_session(&dest_now, chunk_size, &files) {
                 Ok(s) => Arc::new(s),
                 Err(e) => {
                     write_msg(
