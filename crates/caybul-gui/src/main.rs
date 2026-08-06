@@ -904,9 +904,13 @@ impl App {
             ui.set_width(ui.available_width());
             ui.set_min_height(90.0);
             if self.picked.is_empty() {
-                ui.centered_and_justified(|ui| {
-                    ui.weak("Drop files or folders here");
-                });
+                ui.allocate_ui_with_layout(
+                    egui::vec2(ui.available_width(), 80.0),
+                    egui::Layout::centered_and_justified(egui::Direction::TopDown),
+                    |ui| {
+                        ui.weak("Drop files or folders here");
+                    },
+                );
             } else {
                 egui::ScrollArea::vertical()
                     .id_salt("picked")
