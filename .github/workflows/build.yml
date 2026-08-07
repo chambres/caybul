@@ -26,8 +26,9 @@ jobs:
       - name: Assemble universal app + CLI
         run: |
           set -euo pipefail
-          mkdir -p out/Caybul/Caybul.app/Contents/MacOS
+          mkdir -p out/Caybul/Caybul.app/Contents/MacOS out/Caybul/Caybul.app/Contents/Resources
           cp packaging/macos/Info.plist out/Caybul/Caybul.app/Contents/Info.plist
+          cp packaging/icon/AppIcon.icns out/Caybul/Caybul.app/Contents/Resources/AppIcon.icns
           lipo -create \
             target/aarch64-apple-darwin/release/caybul-gui \
             target/x86_64-apple-darwin/release/caybul-gui \

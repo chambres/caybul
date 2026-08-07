@@ -25,15 +25,69 @@ use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::{Duration, Instant};
 
+// Palette, matched to the app icon.
+const NAVY: egui::Color32 = egui::Color32::from_rgb(28, 37, 49); // #1c2531
+const NAVY_DARK: egui::Color32 = egui::Color32::from_rgb(20, 27, 36); // text fields
+const NAVY_RAISED: egui::Color32 = egui::Color32::from_rgb(38, 49, 63); // buttons
+const NAVY_HOVER: egui::Color32 = egui::Color32::from_rgb(48, 61, 78);
+const TEAL: egui::Color32 = egui::Color32::from_rgb(111, 211, 181); // #6fd3b5
+const TEAL_DIM: egui::Color32 = egui::Color32::from_rgb(74, 150, 128);
+const TEXT: egui::Color32 = egui::Color32::from_rgb(226, 232, 240);
+const TEXT_WEAK: egui::Color32 = egui::Color32::from_rgb(140, 152, 168);
+const WARN: egui::Color32 = egui::Color32::from_rgb(240, 200, 90);
+
+fn apply_theme(ctx: &egui::Context) {
+    let mut v = egui::Visuals::dark();
+    v.panel_fill = NAVY;
+    v.window_fill = NAVY;
+    v.extreme_bg_color = NAVY_DARK;
+    v.faint_bg_color = NAVY_RAISED;
+    v.override_text_color = Some(TEXT);
+    v.hyperlink_color = TEAL;
+    v.selection.bg_fill = TEAL.linear_multiply(0.35);
+    v.selection.stroke = egui::Stroke::new(1.0, TEAL);
+
+    let w = &mut v.widgets;
+    w.noninteractive.bg_fill = NAVY;
+    w.noninteractive.weak_bg_fill = NAVY;
+    w.noninteractive.fg_stroke = egui::Stroke::new(1.0, TEXT_WEAK);
+    w.inactive.bg_fill = NAVY_RAISED;
+    w.inactive.weak_bg_fill = NAVY_RAISED;
+    w.inactive.fg_stroke = egui::Stroke::new(1.0, TEXT);
+    w.hovered.bg_fill = NAVY_HOVER;
+    w.hovered.weak_bg_fill = NAVY_HOVER;
+    w.hovered.fg_stroke = egui::Stroke::new(1.0, TEXT);
+    w.active.bg_fill = TEAL;
+    w.active.weak_bg_fill = TEAL;
+    w.active.fg_stroke = egui::Stroke::new(1.0, NAVY);
+
+    let mut style = (*ctx.style()).clone();
+    style.visuals = v;
+    style.spacing.button_padding = egui::vec2(9.0, 3.0);
+    style.spacing.item_spacing = egui::vec2(8.0, 8.0);
+    ctx.set_style(style);
+}
+
 fn main() -> eframe::Result<()> {
+    let mut viewport = egui::ViewportBuilder::default()
+        .with_inner_size([760.0, 700.0])
+        .with_min_inner_size([640.0, 620.0])
+        .with_title("Caybul");
+    if let Ok(icon) = eframe::icon_data::from_png_bytes(include_bytes!("../assets/icon.png")) {
+        viewport = viewport.with_icon(icon);
+    }
     let options = eframe::NativeOptions {
-        viewport: egui::ViewportBuilder::default()
-            .with_inner_size([760.0, 700.0])
-            .with_min_inner_size([640.0, 620.0])
-            .with_title("Caybul"),
+        viewport,
         ..Default::default()
     };
-    eframe::run_native("Caybul", options, Box::new(|_cc| Ok(Box::new(App::new()))))
+    eframe::run_native(
+        "Caybul",
+        options,
+        Box::new(|cc| {
+            apply_theme(&cc.egui_ctx);
+            Ok(Box::new(App::new()))
+        }),
+    )
 }
 
 struct PickedPath {
@@ -135,6 +189,9 @@ struct App {
     // Auto-connect over cable: off after a deliberate disconnect.
     auto_connect: bool,
     last_auto: Option<Instant>,
+    // Liveness: last time the paired peer's beacon was heard. If it goes
+    // quiet (app closed / cable pulled) we drop the connection.
+    paired_last_seen: Option<Instant>,
 }
 
 impl App {
@@ -222,6 +279,27 @@ impl App {
             speed_rx: None,
             auto_connect: true,
             last_auto: None,
+            paired_last_seen: None,
+        }
+    }
+
+    /// Drop the connection when the peer's beacon has been silent too long
+    /// (a force-quit or unplugged cable sends no goodbye).
+    fn check_liveness(&mut self) {
+        const TIMEOUT: Duration = Duration::from_secs(12);
+        if let Some(peer) = self.paired.clone() {
+            let gone = self
+                .paired_last_seen
+                .map(|t| t.elapsed() > TIMEOUT)
+                .unwrap_or(false);
+            if gone {
+                self.push_log(format!("{} disconnected", pretty_name(&peer.name)));
+                self.paired = None;
+                self.send_state = SendState::Idle;
+                self.speed = SpeedState::Unknown;
+                self.speed_rx = None;
+                self.paired_last_seen = None;
+            }
         }
     }
 
@@ -300,6 +378,12 @@ impl App {
             if let Ok(res) = rx.try_recv() {
                 match res {
                     Ok(peers) => {
+                        // Refresh liveness for the paired peer if we heard it.
+                        if let Some(p) = &self.paired {
+                            if peers.iter().any(|q| q.addr.ip() == p.addr.ip()) {
+                                self.paired_last_seen = Some(Instant::now());
+                            }
+                        }
                         self.peers = peers;
                         self.disco_error = None;
                     }
@@ -339,6 +423,7 @@ impl App {
                         token: pr.send_token,
                     });
                     self.pair_error = None;
+                    self.paired_last_seen = Some(Instant::now());
                     self.push_log(format!("Paired with \"{}\"", pr.peer_name));
                     self.start_speed_test(Duration::ZERO);
                 }
@@ -430,6 +515,7 @@ impl App {
                                 addr,
                                 token: send_token,
                             });
+                            self.paired_last_seen = Some(Instant::now());
                             // Stagger so the two sides' probes don't overlap.
                             self.start_speed_test(Duration::from_secs(3));
                         }
@@ -503,8 +589,9 @@ impl App {
     }
 
     fn maybe_discover(&mut self) {
-        if self.paired.is_none()
-            && self.outgoing.is_none()
+        // Keep discovering even while paired, so we can tell when the peer's
+        // beacon stops (liveness). Pause only during an outgoing pair attempt.
+        if self.outgoing.is_none()
             && self.disco_rx.is_none()
             && self.last_disco.elapsed() > Duration::from_secs(4)
         {
@@ -655,9 +742,9 @@ impl App {
         let (color, text) = if has_tb {
             (egui::Color32::from_rgb(90, 200, 250), "Fast cable connected")
         } else if has_cable {
-            (egui::Color32::from_rgb(110, 210, 180), "Cable connected")
+            (TEAL, "Cable connected")
         } else {
-            (egui::Color32::from_rgb(240, 200, 90), "No cable — using Wi-Fi")
+            (WARN, "No cable — using Wi-Fi")
         };
         status_dot(ui, color);
         ui.colored_label(color, text);
@@ -833,9 +920,9 @@ impl App {
         let peer = self.paired.clone().unwrap();
         let via = via_info(&self.links, peer.addr.ip());
         ui.horizontal(|ui| {
-            status_dot(ui, egui::Color32::from_rgb(120, 220, 120));
+            status_dot(ui, TEAL);
             ui.colored_label(
-                egui::Color32::from_rgb(120, 220, 120),
+                TEAL,
                 format!("Connected to {}", pretty_name(&peer.name)),
             );
             ui.colored_label(via.color, format!("over {}", via.label));
@@ -873,7 +960,7 @@ impl App {
         }
         if !via.is_cable && !matches!(via.kind, Some(LinkKind::Loopback)) {
             ui.colored_label(
-                egui::Color32::from_rgb(240, 200, 90),
+                WARN,
                 "You're connected over Wi-Fi. For faster transfers, plug a cable between the \
                  computers, disconnect, and connect again.",
             );
@@ -1040,6 +1127,7 @@ impl eframe::App for App {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         self.drain_channels();
         self.maybe_discover();
+        self.check_liveness();
         self.maybe_auto_connect();
 
         // Drag & drop from Finder/Explorer (only useful once paired).
@@ -1085,7 +1173,7 @@ impl eframe::App for App {
                         );
                     } else if let Some(msg) = self.last_received.clone() {
                         ui.horizontal(|ui| {
-                            status_dot(ui, egui::Color32::from_rgb(120, 220, 120));
+                            status_dot(ui, TEAL);
                             ui.label(msg);
                             if ui.button("Show").clicked() {
                                 let dest = self.dest_dir.lock().unwrap().clone();
@@ -1137,11 +1225,11 @@ fn via_info(links: &[Link], ip: std::net::IpAddr) -> ViaInfo {
                     true,
                 ),
                 LinkKind::UsbLink | LinkKind::Ethernet => {
-                    ("cable", egui::Color32::from_rgb(110, 210, 180), 1, true)
+                    ("cable", TEAL, 1, true)
                 }
                 LinkKind::Loopback => ("this computer", egui::Color32::GRAY, 3, false),
                 LinkKind::Other => ("network", egui::Color32::GRAY, 4, false),
-                LinkKind::WiFi => ("Wi-Fi", egui::Color32::from_rgb(240, 200, 90), 5, false),
+                LinkKind::WiFi => ("Wi-Fi", WARN, 5, false),
                 LinkKind::Vpn => ("network", egui::Color32::GRAY, 6, false),
             };
             ViaInfo {
@@ -1163,8 +1251,10 @@ fn via_info(links: &[Link], ip: std::net::IpAddr) -> ViaInfo {
 }
 
 /// Small colored circle drawn by the app itself — immune to font problems.
+/// Sized to the text line height so it centers with adjacent labels/buttons.
 fn status_dot(ui: &mut egui::Ui, color: egui::Color32) {
-    let (rect, _) = ui.allocate_exact_size(egui::vec2(12.0, 12.0), egui::Sense::hover());
+    let h = ui.text_style_height(&egui::TextStyle::Body);
+    let (rect, _) = ui.allocate_exact_size(egui::vec2(11.0, h), egui::Sense::hover());
     ui.painter().circle_filled(rect.center(), 4.5, color);
 }
 

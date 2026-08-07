@@ -14,3 +14,8 @@ caybul-core = { path = "../caybul-core" }
 anyhow = "1"
 eframe = "0.31"
 rfd = "0.15"
+
+# Unconditional so it's present when cross-compiling to Windows from another
+# host too; build.rs only invokes it when the target OS is Windows.
+[build-dependencies]
+winresource = "0.1"
