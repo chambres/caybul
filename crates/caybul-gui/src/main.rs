@@ -57,9 +57,11 @@ fn apply_theme(ctx: &egui::Context) {
     w.hovered.bg_fill = NAVY_HOVER;
     w.hovered.weak_bg_fill = NAVY_HOVER;
     w.hovered.fg_stroke = egui::Stroke::new(1.0, TEXT);
-    w.active.bg_fill = TEAL;
-    w.active.weak_bg_fill = TEAL;
-    w.active.fg_stroke = egui::Stroke::new(1.0, NAVY);
+    // Note: egui uses active.fg_stroke as the BOLD TEXT color too — keep it
+    // bright, or every ui.strong() label disappears into the background.
+    w.active.bg_fill = NAVY_HOVER;
+    w.active.weak_bg_fill = NAVY_HOVER;
+    w.active.fg_stroke = egui::Stroke::new(1.0, egui::Color32::WHITE);
 
     let mut style = (*ctx.style()).clone();
     style.visuals = v;
