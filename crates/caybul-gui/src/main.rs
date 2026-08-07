@@ -440,7 +440,10 @@ impl App {
             self.speed_rx = None;
             self.speed = match result {
                 Ok(mbps) => SpeedState::Done(mbps),
-                Err(_) => SpeedState::Failed,
+                Err(e) => {
+                    self.push_log(format!("Speed test failed: {e}"));
+                    SpeedState::Failed
+                }
             };
         }
         // Send finished?
@@ -708,25 +711,25 @@ impl App {
 
     // ---------------- UI ----------------
 
-    /// "Received files go to <path>  [Change…] [Show]" — used on both screens.
+    /// Where received files land, with Change / Show each on their own line.
     fn dest_row(&mut self, ui: &mut egui::Ui) {
         let current = self.dest_dir.lock().unwrap().clone();
         ui.horizontal(|ui| {
             ui.weak("Received files go to");
             ui.label(tilde(&current));
-            if ui.button("Change…").clicked() {
-                if let Some(dir) = rfd::FileDialog::new().set_directory(&current).pick_folder() {
-                    *self.dest_dir.lock().unwrap() = dir.clone();
-                    config::save(&config::Config {
-                        dest_dir: Some(dir),
-                    });
-                }
-            }
-            if ui.button("Show").clicked() {
-                let _ = std::fs::create_dir_all(&current);
-                open_folder(&current);
-            }
         });
+        if ui.button("Change…").clicked() {
+            if let Some(dir) = rfd::FileDialog::new().set_directory(&current).pick_folder() {
+                *self.dest_dir.lock().unwrap() = dir.clone();
+                config::save(&config::Config {
+                    dest_dir: Some(dir),
+                });
+            }
+        }
+        if ui.button("Show").clicked() {
+            let _ = std::fs::create_dir_all(&current);
+            open_folder(&current);
+        }
     }
 
     fn link_banner(&self, ui: &mut egui::Ui) {
@@ -919,43 +922,60 @@ impl App {
     fn transfer_screen(&mut self, ui: &mut egui::Ui) {
         let peer = self.paired.clone().unwrap();
         let via = via_info(&self.links, peer.addr.ip());
+        // Line 1: who we're connected to, over what.
         ui.horizontal(|ui| {
             status_dot(ui, TEAL);
-            ui.colored_label(
-                TEAL,
-                format!("Connected to {}", pretty_name(&peer.name)),
-            );
+            ui.colored_label(TEAL, format!("Connected to {}", pretty_name(&peer.name)));
             ui.colored_label(via.color, format!("over {}", via.label));
-            match &self.speed {
-                SpeedState::Testing => {
-                    ui.spinner();
-                    ui.weak("checking speed…");
-                }
-                SpeedState::Done(mbps) => {
-                    let text = if *mbps >= 1000.0 {
-                        format!("· {:.1} Gbit/s", mbps / 1000.0)
-                    } else {
-                        format!("· {mbps:.0} Mbit/s")
-                    };
-                    ui.strong(text);
-                }
-                _ => {}
-            }
-            if ui.button("Disconnect").clicked() {
-                // Tell the other device so it disconnects too (best-effort).
-                let addr = peer.addr;
-                let token = peer.token.clone();
-                thread::spawn(move || pair::send_unpair(addr, &token));
-                self.accepted.lock().unwrap().clear();
-                self.auto_connect = false;
-                self.paired = None;
-                self.send_state = SendState::Idle;
-                self.speed = SpeedState::Unknown;
-                self.speed_rx = None;
-                return;
-            }
         });
-        if self.paired.is_none() {
+
+        // Line 2: the speed readout (always shows something).
+        let mut retry = false;
+        match &self.speed {
+            SpeedState::Testing => {
+                ui.horizontal(|ui| {
+                    ui.spinner();
+                    ui.weak("Measuring speed…");
+                });
+            }
+            SpeedState::Done(mbps) => {
+                let text = if *mbps >= 1000.0 {
+                    format!("Speed: {:.1} Gbit/s", mbps / 1000.0)
+                } else {
+                    format!("Speed: {mbps:.0} Mbit/s")
+                };
+                ui.strong(text);
+            }
+            SpeedState::Failed => {
+                ui.horizontal(|ui| {
+                    ui.weak("Speed test unavailable");
+                    retry = ui.button("Retry").clicked();
+                });
+            }
+            SpeedState::Unknown => {
+                ui.horizontal(|ui| {
+                    ui.weak("Speed not measured");
+                    retry = ui.button("Test speed").clicked();
+                });
+            }
+        }
+        if retry {
+            self.start_speed_test(Duration::ZERO);
+        }
+
+        // Line 3: disconnect.
+        if ui.button("Disconnect").clicked() {
+            // Tell the other device so it disconnects too (best-effort).
+            let addr = peer.addr;
+            let token = peer.token.clone();
+            thread::spawn(move || pair::send_unpair(addr, &token));
+            self.accepted.lock().unwrap().clear();
+            self.auto_connect = false;
+            self.paired = None;
+            self.send_state = SendState::Idle;
+            self.speed = SpeedState::Unknown;
+            self.speed_rx = None;
+            self.paired_last_seen = None;
             return;
         }
         if !via.is_cable && !matches!(via.kind, Some(LinkKind::Loopback)) {
