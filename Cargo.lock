@@ -685,7 +685,7 @@ dependencies = [
 
 [[package]]
 name = "caybul"
-version = "0.1.0"
+version = "1.0.0"
 dependencies = [
  "anyhow",
  "caybul-core",
@@ -695,7 +695,7 @@ dependencies = [
 
 [[package]]
 name = "caybul-core"
-version = "0.1.0"
+version = "1.0.0"
 dependencies = [
  "anyhow",
  "blake3",
@@ -708,7 +708,7 @@ dependencies = [
 
 [[package]]
 name = "caybul-gui"
-version = "0.1.0"
+version = "1.0.0"
 dependencies = [
  "anyhow",
  "caybul-core",

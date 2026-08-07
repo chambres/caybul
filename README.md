@@ -1,4 +1,4 @@
-# Caybul
+# Caybul&nbsp;<img src="docs/caybul-icon.svg" height="30" alt="" valign="middle">
 
 Cross-platform file transfer over a wire, with no setup.
 
