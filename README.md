@@ -2,6 +2,12 @@
 
 Cross-platform file transfer over a wire, with no setup.
 
+<p align="center">
+  <img src="docs/screenshot.png" width="620" alt="Caybul transferring files over an ethernet cable">
+  <br>
+  <sub><em>2-way high speed file transfer over an ethernet cable</em></sub>
+</p>
+
 Plug two computers together, open Caybul on both, drop your files in. It picks the
 fastest path the cable can do and moves them. Works between macOS, Windows and
 Linux in any combination.
