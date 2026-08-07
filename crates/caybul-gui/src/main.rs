@@ -924,9 +924,9 @@ impl App {
     fn transfer_screen(&mut self, ui: &mut egui::Ui) {
         let peer = self.paired.clone().unwrap();
         let via = via_info(&self.links, peer.addr.ip());
-        // Line 1: who we're connected to, over what.
+        // Line 1: who we're connected to, over what. No leading dot — it
+        // would indent this line relative to the rows below it.
         ui.horizontal(|ui| {
-            status_dot(ui, TEAL);
             ui.colored_label(TEAL, format!("Connected to {}", pretty_name(&peer.name)));
             ui.colored_label(via.color, format!("over {}", via.label));
         });
