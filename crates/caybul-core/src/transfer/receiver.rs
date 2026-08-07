@@ -41,6 +41,8 @@ pub enum Event {
         files: usize,
         total_bytes: u64,
         resumed_bytes: u64,
+        /// Name and size of every incoming file.
+        entries: Vec<FileEntry>,
     },
     FileCompleted {
         rel_path: String,
@@ -368,6 +370,7 @@ fn handle_conn(stream: TcpStream, ctx: Arc<Ctx>) -> anyhow::Result<()> {
                 files: files.len(),
                 total_bytes,
                 resumed_bytes,
+                entries: files.clone(),
             });
 
             // Control loop: wait for AllDone (or disconnect).

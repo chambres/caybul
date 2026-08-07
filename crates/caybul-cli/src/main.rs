@@ -204,6 +204,7 @@ fn cmd_receive(dir: PathBuf, name: Option<String>, port: u16) -> anyhow::Result<
             files,
             total_bytes,
             resumed_bytes,
+            entries,
         } => {
             if resumed_bytes > 0 {
                 println!(
@@ -216,6 +217,12 @@ fn cmd_receive(dir: PathBuf, name: Option<String>, port: u16) -> anyhow::Result<
                     "Incoming from {sender}: {files} file(s), {}",
                     human_bytes(total_bytes)
                 );
+            }
+            for e in entries.iter().take(10) {
+                println!("    {} ({})", e.rel_path, human_bytes(e.size));
+            }
+            if entries.len() > 10 {
+                println!("    …and {} more", entries.len() - 10);
             }
         }
         receiver::Event::FileCompleted { rel_path, bytes } => {

@@ -542,6 +542,7 @@ impl App {
                     files,
                     total_bytes,
                     resumed_bytes,
+                    entries,
                 } => {
                     self.recv_progress = Some((resumed_bytes, total_bytes));
                     self.recv_started_at = Some(Instant::now());
@@ -552,6 +553,12 @@ impl App {
                         human_bytes(total_bytes),
                         pretty_name(&sender)
                     ));
+                    for e in entries.iter().take(8) {
+                        self.push_log(format!("    {} ({})", e.rel_path, human_bytes(e.size)));
+                    }
+                    if entries.len() > 8 {
+                        self.push_log(format!("    …and {} more", entries.len() - 8));
+                    }
                 }
                 receiver::Event::Progress {
                     done_bytes,
