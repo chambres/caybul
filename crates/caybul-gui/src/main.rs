@@ -64,7 +64,7 @@ fn apply_theme(ctx: &egui::Context) {
     let mut style = (*ctx.style()).clone();
     style.visuals = v;
     style.spacing.button_padding = egui::vec2(9.0, 3.0);
-    style.spacing.item_spacing = egui::vec2(8.0, 8.0);
+    style.spacing.item_spacing = egui::vec2(8.0, 4.0);
     ctx.set_style(style);
 }
 
@@ -1219,6 +1219,13 @@ impl eframe::App for App {
             });
 
         ctx.request_repaint_after(Duration::from_millis(200));
+    }
+
+    /// Closing the window disconnects the other side too.
+    fn on_exit(&mut self, _gl: Option<&eframe::glow::Context>) {
+        if let Some(peer) = &self.paired {
+            pair::send_unpair(peer.addr, &peer.token);
+        }
     }
 }
 
